@@ -1,0 +1,483 @@
+---
+title: 'Data Analysis data.table way'
+#author: "Amit Agni"
+date: "22/10/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(here)
+library(data.table)
+```
+
+Notes from the DataCamp course conducted by the authors of the data.table package - Matt Dowle and Arun Srinivasan  
+
+Just like other DataCamp courses, this course provides a quick and brief overview of the data.table package. It will not make you an expert in data.table but covers the basic concepts. These concepts when applied to real-life project will make you an expert.
+
+The course has three chapters - Novice, Yeoman and Expert. This post has my notes from all of them. It also has notes from some side-reading I did while doing the course
+
+
+***
+
+_**Chapter 1 : data.table novice**_
+
+***
+
+The data.table has three key elements DT[i,j,by]  
+
+* i : Filtering the rows (SQL WHERE)  
+* j : Choosing the columns (SQL SELECT)  
+* by : For grouping (SQL GROUP BY)  
+
+Create a data.table using recycling
+
+```{r}
+DT <- data.table(a = c(1L,2L), b = LETTERS[1:4], c = 1)
+DT
+```
+
+
+
+### Selecting columns in j
+
+* .() is an alias to list() in data.tables  
+* Without .(), it will return a vector  
+* When you use .() in j, the result is always a data.table. For convenience, data.table also provides the option to return a vector while computing on just a single column and not wrapping it with .().  
+* j can be used to select columns by wrapping the column names in .().  
+* **The column names within DT[...] are treated as variables**
+
+
+
+```{r}
+DT <- data.table(A=c(1:5L),
+                 B=c("a","b"),
+                 C=c(6:10))
+
+#Gives a vector
+DT[,B]
+DT[,c(B,C)]
+#gives a data.table, traditional DF way
+DT[,"B"]
+DT[,c("B","C")]
+
+#Data.table way
+DT[,2] #bad practice to refer columns by their numbers
+DT[,.(B,C)]
+DT[,list(B,C)]
+
+#Using column names as variables
+DT[,A*C]
+DT[,.(B,myresult = A*C)]
+
+```
+
+### Expressions {} and Funcitons within DT
+
+```{r fig.width=3,fig.height=3}
+#Use {} to create a variable and use it with a column
+DT[,.(A,B,C,{var <- C*100; var + A})]
+
+#Call any function, Wrap inside .() to return DT
+DT[,.(sin(A),cos(A))]
+
+#Multiple expressions can be wrapped inside curly braces, separate by ; or \n
+#call even a plot
+
+DT[,{print(A) 
+    hist(C) 
+    A+C
+    .(A+C)}]
+
+
+```
+
+
+### Recycling, tot is copied across B
+
+```{r}
+DT[,.(B,tot = sum(C))]
+
+```
+
+
+### .() can also be used in by
+```{r}
+# data.table version of iris: DT
+DT <- as.data.table(iris)
+DT[,.N, by = round(Sepal.Length*Sepal.Width/10)]
+
+# Using .() to  name the output columns `Area` and `Count`
+DT[,.(count= .N), 
+   by = .(Area = round(Sepal.Length*Sepal.Width/10))]
+
+
+```
+
+
+***
+
+_**Chapter 2 : data.table yeoman**_
+
+***
+
+### [S]ubset of [D]ata - .SD
+
+* .SDcols specifies the columns of DT that are included in .SD.  
+* Using .SDcols comes in handy if you have too many columns and you want to perform a particular operation on a subset of the columns (apart from the grouping variable columns).  
+* Using .SDcols allows you to apply a function to all rows of a data.table, but only to some of the columns.
+
+
+```{r}
+# Calculate the sum of columns H1 and H2 
+DT<- data.table(grp= c(6,6,8,8,8)
+                ,Q1 = c(3,3,5,2,4)
+                ,Q2 = c(1,1,5)
+                ,Q3 = c(3,2,5,1,3)
+                ,H1 = c(1,4,3,5,1)
+                ,H2 = c(1,5,1,3,3))
+
+DT[,lapply(.SD, sum), .SDcols = paste0("H", 1:2)]
+
+# Select all but the first row of groups 1 and 2, returning only the grp column and the Q columns
+DT[-1,.SD,by=grp,.SDcols=paste0("Q",1:3)]
+
+#correct anaswer
+DT[,.SD[-1],by=grp,.SDcols=paste0("Q",1:3)]
+
+
+```
+
+#### Some points
+* It's important to remember that whenever the j argument is a list (e.g. if it contains .SD or a call to lapply()), a data.table is returned. 
+* It's also helpful to know that combining a list with a vector results in a new longer list. 
+* Lastly, note that when you select .N on its own, it is renamed N in the output for convenience when chaining.
+
+```{r}
+DT <- data.table(x=c(2,1,2,1,2,2,1)
+                 ,y=c(1,3,5,7,9 ,11 ,13)
+                 ,z= c(2 , 4 , 6 , 8 ,10 ,12 ,14))
+
+
+DT
+
+#Get the sum of all columns x, y and z and the number of rows in each group while grouping by x. 
+#For the first part, you need to combine the list returned from lapply(), .SD and .SDcols with the integer vector of .N. This is because the result of the two together has to be a list again, with all values put together. That combination will be the j argument.
+DT[, c(lapply(.SD, sum), .N), by = x, .SDcols = c("x", "y", "z")]
+
+#Get the cumulative sum of column x and y while grouping by x and z > 8
+#In the second instruction, the by argument takes multiple parameters, passed in as a list enclosed by .().
+DT[, lapply(.SD, cumsum), by = .(by1 = x, by2 = z > 8), .SDcols = c("x", "y")]
+
+```
+
+
+### The := operator  
+* Updates the columns in a database by reference  
+* Eliminates the use of <- 
+* One way of using := is the LHS := RHS form, where LHS is a character vector of columns (referenced by name or number) you wish to update and RHS is the corresponding value for each column 
+* LHS of := must be a symbol, or an atomic vector (column names or positions).
+
+
+```{r}
+DT <- data.table(x=c(2,1,2,1,2,2,1)
+                 ,y=c(1,3,5,7,9 ,11 ,13)
+                 ,z= c(2 , 4 , 6 , 8 ,10 ,12 ,14))
+DT
+
+DT[,c("x","new_col") := .(rev(x),x+y+z)]
+DT
+
+#if there is only 1 column to be updated then we can use the shortcut
+DT[,y := rev(y)]
+DT
+
+#to remove columns 
+DT[, new_col := NULL]
+DT
+
+#If multiple columns to be deleted are say in a vector, then we can wrap that vector inside brackets
+mycols <- c("new_col1","new_col2")
+DT[,(mycols) := .(rep(c(1,2),5),x*100)]
+DT
+
+#LHS of column name can also be used like this
+#LHS gets evaluated and the RHS values get applied
+DT[,paste0("new_col",1:2) := NULL]
+DT
+
+
+```
+#### Functional way of using :=
+
+```{r}
+#Easier to read 
+DT[,`:=` (new_col1 = rep(c(1,2), each =2)
+          ,new_col2 = x*100)]
+
+DT
+```
+
+
+#### Combining := combined with i and by
+
+```{r}
+#update new_col1, for all rows except 1:2 by x
+DT[-c(1:2),new_col1 := sum(new_col2), by = x]
+DT
+```
+
+
+
+###set() functions
+* The set() function is used to repeatedly update a data.table by reference.  
+* You can think of the set() function as a loopable, low overhead version of the := operator, except that set() cannot be used for grouping operations. 
+* set(DT, index, column, value)  
+* The function takes four arguments:  
+    + A data.table with the columns you wish to update  
+    + The index used in a loop (e.g. the i in for(i in 1:5))  (__is this the row index ?__)
+    + The column or columns you wish to update in the loop  
+    + How the column or columns should be updated  
+  
+
+
+
+```{r}
+DT <- data.table(x=c(2,1,2,1,2,2,1)
+                 ,y=c(1,3,5,7,9 ,11 ,13)
+                 ,z= c(2 , 4 , 6 , 8 ,10 ,12 ,14))
+
+DT
+#updating columns inside for
+for(i in 1:5) DT[i,new_col := i*10]
+DT
+#update last 2 rows of 4th column using set()
+for(i in 6:7) set(DT,i,4L,i*100)
+DT
+```
+
+### setnames(DT,old,name) and setcolorder(DT,neworder)
+
+```{r}
+setnames(DT,c("z","new_col"),c("new_col1","new_col2"))
+setcolorder(DT,c("new_col1","new_col2"))
+DT
+
+```
+
+### Randomly insert  NAs in a DT
+```{r}
+DT <- data.table(x=c(2,1,2,1,2,2,1)
+                 ,y=c(1,3,5,7,9 ,11 ,13)
+                 ,z= c(2 , 4 , 6 , 8 ,10 ,12 ,14))
+
+DT[,new_col1 := x*100]
+set.seed(1)
+#Loop through columns 2, 3, and 4, and for each one, select 3 rows at random and set the value of that column to NA.
+for(i in 2:4) set(DT,sample(1:nrow(DT),3),i,NA)
+
+DT
+
+```
+
+
+***
+
+_**Chapter 3 : data.table expert**_
+
+***
+
+### Indexing
+
+data.table automatically creates index, on any column that is used in the i clause !
+
+* Regex refresher  
+    + Metacharacters allow you to match certain types of characters. 
+    + For example, . means any single character, ^ means "begins with", and $ means "ends with".
+    + If you want to use any of the metacharacters as actual text, you need to use the \\ escape sequence.
+
+
+```{r}
+iris <- data.table(iris)
+#No need for the second arugment
+#Rename columns
+setnames(iris,gsub("^Sepal\\.","",names(iris)))
+head(iris)
+
+#iris[,.(grep("^Petal",names(iris))) := NULL]
+#Error in `[.data.table`(iris, , `:=`(.(grep("^Petal", names(iris))), NULL)) : LHS of := must be a symbol, or an atomic vector (column names or positions).
+
+```
+
+### Understanding automatic indexing
+
+* You've been introduced to the rule that "if i is a single variable name, it is evaluated in the calling scope, otherwise inside DT's scope".   
+* This is a very important rule if you want to conceptually understand what is going on when using column names in i.   
+* Only single columns on the left side of operators benefit from automatic indexing.  
+
+
+
+```{r}
+#iris <- data.table(iris)
+
+# Area is greater than 20 square centimeters
+iris[Length * Width > 25]
+
+# Add new boolean column
+iris[,is_large := Length * Width > 25]
+
+# Now large observations with is_large
+#For the third instruction, DT[is_large] will not work because is_large is not in the calling environment. In this situation, you can use DT[is_large == TRUE], or just wrap it in parentheses so that it's not a single name anymore:
+
+#iris[is_large]
+
+#Error in `[.data.table`(iris, is_large) : is_large is not found in calling scope and it is not a column of type logical. When the first argument inside DT[...] is a single symbol, data.table looks for it in calling scope.
+
+iris[(is_large)]
+#or
+iris[is_large == TRUE]
+
+
+```
+
+### Keys
+
+* Setting a key manually in a DT
+* Sorts the data by key
+* Keys are like super charged __row names__
+
+
+```{r}
+
+DT <- data.table(x=c(rep(c("a","b"), each =2))
+                 ,y=c(1,5,3,7,1 ,3 ,13)
+                 ,z= c(1 , 3 , 11 , 13 ,10 ,5 ,1))
+
+DT
+setkey(DT,x)
+DT
+#key acting as row name
+DT["a"]
+#return first and last row 
+DT["b",mult = "first"]
+DT["b",mult = "last"]
+#row with name a is found in the key column
+#but c is not found, so it returns NA
+DT[c("a","c")]
+#nomatch returns only matching rows
+DT[c("a","c"),nomatch = 0]
+
+#Setting 2 column keys
+setkey(DT,x,y)
+#.() needs to use in i to lookup 
+DT[.("a",1)]
+DT[.("a",11)]
+
+DT["a"]
+```
+
+### Excercise
+
+```{r}
+
+DT <- data.table(A = letters[c(2, 1, 2, 3, 1, 2, 3)], 
+                 B = c(5, 4, 1, 9, 8, 8, 6), 
+                 C = 6:12)
+setkey(DT, A, B)
+# First and last row of the "b" and "c" groups
+DT[c("b", "c"), .SD[c(1, .N)], by = .EACHI]
+
+```
+
+
+### Rolling joins
+
+* Ordered joins
+* Can be used to fill the gaps that exist in data (eg missing time periods in time series) 
+* The roll applies to the NA values in the last join column.
+
+```{r}
+
+DT <- data.table(A = letters[c(2, 1, 2, 3, 1, 2, 3)], 
+                 B = c(5, 4, 1, 9, 8, 8, 6), 
+                 C = 6:12, 
+                 key = "A,B")
+
+#Use the super-charged row names to look up the row where A == "b" and B == 6, without using ==! Verify here that column C is NA.
+DT[.("b",6)]
+#Based on the query that was written in the previous instruction, return the prevailing row before this "gap". Specify the roll argument.
+DT[.("b", 6), roll = TRUE]
+
+#Again, start with the code from the second instruction, but this time, find the nearest row. Specify the roll argument accordingly.
+
+DT[.("b", 6), roll = "nearest"]
+
+
+
+```
+
+### Excercise
+
+```{r}
+DT <- data.table(A = letters[c(2, 1, 2, 3, 1, 2, 3)], 
+                 B = c(5, 4, 1, 9, 8, 8, 6), 
+                 C = 6:12, 
+                 key = "A,B")
+
+
+#For the group where column A is equal to "b", print out the sequence when column B is set equal to (-2):10.
+DT[.("b",(-2):10)]
+#Extend the code you wrote for the first instruction to roll the prevailing values forward to replace the NAs.
+
+DT[.("b",(-2):10),roll = Inf]
+#Extend your code with the appropriate rollends value to roll the first observation backwards.
+DT[.("b",(-2):10),roll = Inf,rollends = TRUE]
+
+DT[.("b",20)]
+
+```
+
+#### Forcing integer
+
+```{r results="hold"}
+#results hold
+typeof(1)
+typeof(1L)
+#another comment here
+typeof(NA)
+typeof (NA_integer_)
+```
+
+
+
+
+
+
+# Summary
+* Novice :
+    - DT[i,j,by]
+    - .() is an alias to list(), without .() in j will return a vector
+    - Column names within DT are treated as variable hence can be used in expressions
+    - Multiple expressions in j to be specified within {} separated by either ; or \n
+    - Functions can also be specified in j
+    - .() can also be used in by to create/use as columns
+
+* Yeoman
+    - Chaining
+    - .SD is the subset of data and .SDCols can be used to specify the columns that are included in .SD
+    - := updates the columns by reference and eliminates the use of <-
+    - set(DT,index,column,value) can be used as an alternative to := (loopable, low overhead)
+    - setnames(DT,old,name) and setcolorder(DT,neworder)
+    - Randomly insert NAs : for(i in 2:4) set(DT,sample(1:nrow(DT),3),i,NA)
+
+* Expert
+    - DT automatically creates index on columns used in i and subsequent queries involving those columns run faster
+    - setkey(DT,keys) manually creates keys, that sort the data and are like supercharged row names
+    - Rolling joins 
+
+* TO DO
+    +  [Understanding rolling joins](https://www.r-bloggers.com/understanding-data-table-rolling-joins/)
+     + [data.table FAQs](http://datatable.r-forge.r-project.org/datatable-faq.pdf)
+
+
+

@@ -1,0 +1,7 @@
+"0","knitr::opts_chunk$set(echo = TRUE)"
+"0","library(here)"
+"2","here() starts at /Mac Backup/OneDrive/R/Self-Study/DataCamp/Data Analysis data.table Way
+"
+"0","library(data.table)"
+"2","data.table 1.11.6  Latest news: r-datatable.com
+"
